@@ -8,3 +8,18 @@ export interface Session {
   durationMinutes: number;
   calories: number;
 }
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+}
+
+export interface ActivitySummary {
+  caloriesBurnedToday: number;
+  totalWorkoutMinutes: number;
+  activityTypes: ActivityType[];
+  sessionCount: number;
+  weightKg: number;
+}
