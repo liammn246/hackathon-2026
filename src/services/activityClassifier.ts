@@ -1,32 +1,24 @@
 import { ActivityType } from '../types';
 
-const IDLE_THRESHOLD = 0.05;
-const WALKING_THRESHOLD = 0.2;
 const GRAVITY_G = 1;
 const NOISE_FLOOR = 0.015;
 
 /**
- * Compute the magnitude of an accelerometer reading.
- * Removes gravity in an orientation-independent way.
+ * Compute ENMO (Euclidean Norm Minus One) from accelerometer axes.
+ * Returns the net dynamic acceleration above gravity, clamped to 0.
  */
 export function computeMagnitude(x: number, y: number, z: number): number {
-  // Total acceleration includes gravity. At rest this is ~1g regardless of orientation.
   const total = Math.sqrt(x * x + y * y + z * z);
-  const dynamic = Math.abs(total - GRAVITY_G);
-
-  // Ignore tiny jitter from sensor noise.
-  if (dynamic < NOISE_FLOOR) {
-    return 0;
-  }
-
-  return dynamic;
+  const enmo = Math.max(0, total - GRAVITY_G);
+  return enmo < NOISE_FLOOR ? 0 : enmo;
 }
 
 /**
- * Classify a smoothed motion magnitude into an activity type.
+ * Classify a dynamic MET value into a labelled activity intensity.
+ * Low < 2 MET, Moderate 2–5 MET, Intense > 5 MET.
  */
-export function classifyActivity(magnitude: number): ActivityType {
-  if (magnitude < IDLE_THRESHOLD) return 'idle';
-  if (magnitude < WALKING_THRESHOLD) return 'walking';
-  return 'running';
+export function classifyActivity(met: number): ActivityType {
+  if (met < 2) return 'low';
+  if (met <= 5) return 'moderate';
+  return 'intense';
 }

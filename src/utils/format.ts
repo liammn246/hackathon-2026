@@ -24,22 +24,18 @@ export function formatDate(timestampMs: number): string {
 
 export function activityLabel(type: ActivityType): string {
   switch (type) {
-    case 'walking':
-      return 'Walk';
-    case 'running':
-      return 'Run';
-    default:
-      return 'Activity';
+    case 'intense': return 'Intense';
+    case 'moderate': return 'Moderate';
+    case 'low': return 'Low';
+    default: return 'Activity';
   }
 }
 
 export function activityIcon(type: ActivityType): string {
   switch (type) {
-    case 'walking':
-      return '🚶';
-    case 'running':
-      return '🏃';
-    default:
-      return '⏱️';
+    case 'intense': return '🏃';
+    case 'moderate': return '🚶';
+    case 'low': return '🧍';
+    default: return '⏱️';
   }
 }

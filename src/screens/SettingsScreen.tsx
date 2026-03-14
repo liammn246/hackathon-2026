@@ -64,22 +64,7 @@ export default function SettingsScreen() {
           <Text style={styles.buttonText}>{saved ? 'Saved ✓' : 'Save'}</Text>
         </TouchableOpacity>
       </View>
-
-      <Text style={styles.infoTitle}>MET Values Used</Text>
-      <View style={styles.metCard}>
-        <MetRow activity="🚶 Walking" met="3.5" />
-        <MetRow activity="🏃 Running" met="8.0" />
-      </View>
     </KeyboardAvoidingView>
-  );
-}
-
-function MetRow({ activity, met }: { activity: string; met: string }) {
-  return (
-    <View style={metStyles.row}>
-      <Text style={metStyles.activity}>{activity}</Text>
-      <Text style={metStyles.met}>MET {met}</Text>
-    </View>
   );
 }
 
@@ -147,37 +132,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  infoTitle: {
-    fontSize: 14,
-    color: '#8E8E93',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 10,
-  },
-  metCard: {
-    backgroundColor: '#1C1C1E',
-    borderRadius: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-  },
 });
 
-const metStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2C2C2E',
-  },
-  activity: {
-    color: '#fff',
-    fontSize: 15,
-  },
-  met: {
-    color: '#FF6B35',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-});
