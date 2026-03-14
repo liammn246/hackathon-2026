@@ -17,8 +17,17 @@ export default function RootLayout() {
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+        <Stack.Screen
+          name="session/[id]"
+          options={{
+            title: 'Session Detail',
+            headerStyle: { backgroundColor: '#000' },
+            headerTintColor: '#FF6B35',
+            headerTitleStyle: { color: '#fff', fontWeight: '700' },
+          }}
+        />
       </Stack>
-      <StatusBar style="auto" />
+      <StatusBar style="light" />
     </ThemeProvider>
   );
 }
