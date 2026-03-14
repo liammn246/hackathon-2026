@@ -14,7 +14,7 @@ import ActivityGraph, { EpochDataPoint } from '../components/ActivityGraph';
 import CaloriesCard from '../components/CaloriesCard';
 import SessionItem from '../components/SessionItem';
 import TopSessionCard from '../components/TopSessionCard';
-import { startMotionTracking, setOnEpochRecorded, getEpochHistory } from '../services/motionService';
+import { startMotionTracking, setOnEpochRecorded, getEpochHistory, clearEpochHistory, initEpochHistory } from '../services/motionService';
 import { setOnActiveCaloriesUpdated, setOnSessionSaved } from '../services/sessionManager';
 import { clearAllSessions, getTodaySessions } from '../storage/sessionStorage';
 import { ActivityType, Session } from '../types';
@@ -56,8 +56,12 @@ export default function HomeScreen() {
     });
     setOnActiveCaloriesUpdated(setLiveCalories);
     setOnEpochRecorded(setEpochHistory);
-    setEpochHistory(getEpochHistory());
-    startMotionTracking((activity, _met) => setLiveActivity(activity));
+
+    // Load persisted epoch history, then start tracking
+    initEpochHistory().then((history) => {
+      setEpochHistory(history);
+      startMotionTracking((activity, _met) => setLiveActivity(activity));
+    });
   }, [loadSessions]);
 
   // Reload sessions when app comes back to foreground
@@ -73,8 +77,10 @@ export default function HomeScreen() {
 
   async function handleClear() {
     await clearAllSessions();
+    await clearEpochHistory();
     setSessions([]);
     setLiveCalories(0);
+    setEpochHistory([]);
   }
 
   const totalCalories = Math.round(sessions.reduce((sum, s) => sum + s.calories, 0) + liveCalories);

@@ -111,7 +111,7 @@ async function endCurrentSession(endTimeMs: number): Promise<void> {
   const startMs = pending.sessionStartMs;
   const durationMinutes = Math.round((endTimeMs - startMs) / 60000);
 
-  if (durationMinutes < 1) {
+  if (durationMinutes < 5) {
     // Too short — discard
     state = 'idle';
     pending = null;

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
 export interface EpochDataPoint {
@@ -6,13 +6,14 @@ export interface EpochDataPoint {
   met: number;
 }
 
-const BAR_COUNT = 20; // show last 20 epochs (10 minutes at 30s epochs)
+const VISUAL_BARS = 48; // max visual columns
 const MAX_MET = 12;
 
 const COLORS = {
-  low: '#636366',      // grey
+  low: '#636366',       // grey
   moderate: '#FF9F0A',  // amber
   intense: '#FF453A',   // red
+  empty: '#2C2C2E',     // dark fill for empty buckets
 };
 
 function barColor(met: number): string {
@@ -22,8 +23,60 @@ function barColor(met: number): string {
 }
 
 function formatTime(ms: number): string {
-  const d = new Date(ms);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Pick a human-readable label for the bucket size. */
+function bucketLabel(bucketMs: number): string {
+  const mins = Math.round(bucketMs / 60_000);
+  if (mins < 60) return `${mins}m intervals`;
+  const hrs = (mins / 60).toFixed(1).replace(/\.0$/, '');
+  return `${hrs}h intervals`;
+}
+
+interface Bucket {
+  startMs: number;
+  endMs: number;
+  avgMet: number;
+  count: number; // 0 = no data in this bucket
+}
+
+function bucketize(data: EpochDataPoint[], numBuckets: number): Bucket[] {
+  if (data.length === 0) return [];
+
+  const minTs = data[0].timestamp;
+  const maxTs = data[data.length - 1].timestamp;
+  const span = maxTs - minTs;
+
+  // If all data is within a tiny range, just show raw points
+  if (span <= 0 || data.length <= numBuckets) {
+    return data.map(d => ({
+      startMs: d.timestamp,
+      endMs: d.timestamp,
+      avgMet: d.met,
+      count: 1,
+    }));
+  }
+
+  const bucketWidth = span / numBuckets;
+  const buckets: Bucket[] = [];
+
+  for (let i = 0; i < numBuckets; i++) {
+    const start = minTs + i * bucketWidth;
+    const end = start + bucketWidth;
+    const points = data.filter(d => d.timestamp >= start && d.timestamp < end);
+
+    buckets.push({
+      startMs: start,
+      endMs: end,
+      avgMet: points.length > 0
+        ? points.reduce((s, p) => s + p.met, 0) / points.length
+        : 0,
+      count: points.length,
+    });
+  }
+
+  return buckets;
 }
 
 interface Props {
@@ -31,25 +84,42 @@ interface Props {
 }
 
 export default function ActivityGraph({ data }: Props) {
-  // Take the most recent BAR_COUNT points
-  const visible = data.slice(-BAR_COUNT);
+  const buckets = useMemo(() => bucketize(data, VISUAL_BARS), [data]);
 
-  // Pad with empty slots if we have fewer than BAR_COUNT
-  const padded: (EpochDataPoint | null)[] = [
-    ...Array(Math.max(0, BAR_COUNT - visible.length)).fill(null),
-    ...visible,
-  ];
+  if (buckets.length === 0) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.title}>Activity Timeline</Text>
+        <Text style={styles.emptyText}>Collecting data — first bar appears after 30s</Text>
+      </View>
+    );
+  }
 
-  const firstTime = visible.length > 0 ? visible[0].timestamp : null;
-  const lastTime = visible.length > 0 ? visible[visible.length - 1].timestamp : null;
+  const firstTime = buckets[0].startMs;
+  const lastTime = buckets[buckets.length - 1].endMs;
+  const spanMs = lastTime - firstTime;
+
+  const firstLabel = formatTime(buckets[0].startMs);
+  const lastLabel = buckets.length > 1
+    ? formatTime(buckets[buckets.length - 1].startMs)
+    : null;
 
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>Activity Timeline</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.title}>Activity Timeline</Text>
+        {spanMs > 60_000 && (
+          <Text style={styles.subtitle}>
+            {buckets.length < data.length
+              ? bucketLabel(spanMs / buckets.length)
+              : '30s epochs'}
+          </Text>
+        )}
+      </View>
 
-      {/* MET threshold lines */}
+      {/* Chart */}
       <View style={styles.chartArea}>
-        {/* Y-axis labels */}
+        {/* Y-axis */}
         <View style={styles.yAxis}>
           <Text style={styles.yLabel}>{MAX_MET}</Text>
           <Text style={styles.yLabel}>5</Text>
@@ -64,9 +134,9 @@ export default function ActivityGraph({ data }: Props) {
           <View style={[styles.thresholdLine, { bottom: `${(5 / MAX_MET) * 100}%` }]} />
 
           <View style={styles.barsRow}>
-            {padded.map((point, i) => {
-              const met = point ? Math.min(point.met, MAX_MET) : 0;
-              const heightPercent = (met / MAX_MET) * 100;
+            {buckets.map((bucket, i) => {
+              const met = Math.min(bucket.avgMet, MAX_MET);
+              const heightPercent = bucket.count > 0 ? (met / MAX_MET) * 100 : 0;
 
               return (
                 <View key={i} style={styles.barWrapper}>
@@ -74,8 +144,8 @@ export default function ActivityGraph({ data }: Props) {
                     style={[
                       styles.bar,
                       {
-                        height: `${heightPercent}%`,
-                        backgroundColor: point ? barColor(point.met) : '#2C2C2E',
+                        height: `${Math.max(heightPercent, bucket.count > 0 ? 1.5 : 0)}%`,
+                        backgroundColor: bucket.count > 0 ? barColor(bucket.avgMet) : COLORS.empty,
                       },
                     ]}
                   />
@@ -86,16 +156,16 @@ export default function ActivityGraph({ data }: Props) {
         </View>
       </View>
 
-      {/* X-axis time labels */}
+      {/* X-axis */}
       <View style={styles.xAxis}>
-        <Text style={styles.xLabel}>{firstTime ? formatTime(firstTime) : '--:--'}</Text>
-        <Text style={styles.xLabel}>{lastTime ? formatTime(lastTime) : '--:--'}</Text>
+        <Text style={styles.xLabel}>{firstLabel}</Text>
+        {lastLabel && <Text style={styles.xLabel}>{lastLabel}</Text>}
       </View>
 
       {/* Legend */}
       <View style={styles.legend}>
         <LegendDot color={COLORS.low} label="Low (<2)" />
-        <LegendDot color={COLORS.moderate} label="Moderate (2-5)" />
+        <LegendDot color={COLORS.moderate} label="Mod (2-5)" />
         <LegendDot color={COLORS.intense} label="Intense (5+)" />
       </View>
     </View>
@@ -118,11 +188,26 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 12,
+  },
   title: {
     fontSize: 16,
     fontWeight: '700',
     color: '#fff',
-    marginBottom: 12,
+  },
+  subtitle: {
+    fontSize: 11,
+    color: '#8E8E93',
+  },
+  emptyText: {
+    color: '#636366',
+    fontSize: 13,
+    textAlign: 'center',
+    paddingVertical: 30,
   },
   chartArea: {
     flexDirection: 'row',
@@ -147,7 +232,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 2,
+    gap: 1,
   },
   barWrapper: {
     flex: 1,
@@ -156,8 +241,7 @@ const styles = StyleSheet.create({
   },
   bar: {
     width: '100%',
-    borderRadius: 3,
-    minHeight: 2,
+    borderRadius: 2,
   },
   thresholdLine: {
     position: 'absolute',
@@ -171,7 +255,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 6,
-    paddingLeft: 24,
+    marginLeft: 24,
   },
   xLabel: {
     fontSize: 10,
@@ -180,7 +264,7 @@ const styles = StyleSheet.create({
   legend: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 12,
+    marginTop: 10,
     gap: 16,
   },
   legendItem: {
