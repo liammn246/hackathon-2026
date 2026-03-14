@@ -1,4 +1,4 @@
-export type ActivityType = 'idle' | 'walking' | 'running';
+export type ActivityType = 'low' | 'moderate' | 'intense';
 
 export interface Session {
   id: string;

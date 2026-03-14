@@ -1,73 +1,83 @@
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useKeepAwake } from 'expo-keep-awake';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  FlatList,
+  AppState,
+  AppStateStatus,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
-  AppState,
-  AppStateStatus,
-  Platform,
+  View
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { Session, ActivityType } from '../types';
-import { getTodaySessions } from '../storage/sessionStorage';
-import { startMotionTracking, stopMotionTracking } from '../services/motionService';
-import { setOnSessionSaved, flushCurrentSession } from '../services/sessionManager';
+import ActivityGraph, { EpochDataPoint } from '../components/ActivityGraph';
 import CaloriesCard from '../components/CaloriesCard';
-import TopSessionCard from '../components/TopSessionCard';
 import SessionItem from '../components/SessionItem';
+import TopSessionCard from '../components/TopSessionCard';
+import { startMotionTracking, setOnEpochRecorded, getEpochHistory } from '../services/motionService';
+import { setOnActiveCaloriesUpdated, setOnSessionSaved } from '../services/sessionManager';
+import { clearAllSessions, getTodaySessions } from '../storage/sessionStorage';
+import { ActivityType, Session } from '../types';
 
 export default function HomeScreen() {
+  // Keep screen awake while this screen is mounted
+  useKeepAwake();
+
   const router = useRouter();
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [isTracking, setIsTracking] = useState(false);
   const [liveActivity, setLiveActivity] = useState<ActivityType | null>(null);
+  const [liveCalories, setLiveCalories] = useState(0);
+  const [epochHistory, setEpochHistory] = useState<EpochDataPoint[]>([]);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const trackingStarted = useRef(false);
 
   const loadSessions = useCallback(async () => {
     const today = await getTodaySessions();
     setSessions(today);
   }, []);
 
-  // Reload sessions whenever the screen is focused (e.g. after returning from detail)
+  // Reload sessions whenever the screen is focused
   useFocusEffect(
     useCallback(() => {
       loadSessions();
     }, [loadSessions]),
   );
 
-  // Handle app state changes — flush session when backgrounded
+  // Auto-start tracking on mount — runs once
+  useEffect(() => {
+    if (trackingStarted.current) return;
+    trackingStarted.current = true;
+
+
+
+    setOnSessionSaved(async () => {
+      await loadSessions();
+      setLiveCalories(0);
+    });
+    setOnActiveCaloriesUpdated(setLiveCalories);
+    setOnEpochRecorded(setEpochHistory);
+    setEpochHistory(getEpochHistory());
+    startMotionTracking((activity, _met) => setLiveActivity(activity));
+  }, [loadSessions]);
+
+  // Reload sessions when app comes back to foreground
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
-      if (
-        appStateRef.current === 'active' &&
-        (next === 'background' || next === 'inactive')
-      ) {
-        flushCurrentSession().then(loadSessions);
+      if (appStateRef.current !== 'active' && next === 'active') {
+        loadSessions();
       }
       appStateRef.current = next;
     });
     return () => sub.remove();
   }, [loadSessions]);
 
-  function toggleTracking() {
-    if (isTracking) {
-      stopMotionTracking();
-      flushCurrentSession().then(loadSessions);
-      setIsTracking(false);
-      setLiveActivity(null);
-    } else {
-      setOnSessionSaved(() => loadSessions());
-      startMotionTracking((activity, _mag) => {
-        setLiveActivity(activity);
-      });
-      setIsTracking(true);
-    }
+  async function handleClear() {
+    await clearAllSessions();
+    setSessions([]);
+    setLiveCalories(0);
   }
 
-  const totalCalories = sessions.reduce((sum, s) => sum + s.calories, 0);
+  const totalCalories = Math.round(sessions.reduce((sum, s) => sum + s.calories, 0) + liveCalories);
   const topSession = sessions.reduce<Session | null>(
     (best, s) => (!best || s.calories > best.calories ? s : best),
     null,
@@ -82,20 +92,23 @@ export default function HomeScreen() {
         <Text style={styles.heading}>Activity Tracker</Text>
 
         {/* Calories summary */}
-        <CaloriesCard totalCalories={totalCalories} isTracking={isTracking} />
+        <CaloriesCard totalCalories={totalCalories} isTracking={true} />
 
         {/* Live status */}
-        {isTracking && liveActivity !== null && (
+        {liveActivity !== null && (
           <View style={styles.liveBar}>
             <Text style={styles.liveText}>
-              {liveActivity === 'idle'
-                ? 'Standing still…'
-                : liveActivity === 'walking'
-                  ? '🚶 Walking detected'
-                  : '🏃 Running detected'}
+              {liveActivity === 'low'
+                ? '🧍 Low activity'
+                : liveActivity === 'moderate'
+                  ? '🚶 Moderate activity'
+                  : '🏃 Intense activity'}
             </Text>
           </View>
         )}
+
+        {/* Activity graph */}
+        <ActivityGraph data={epochHistory} />
 
         {/* Top session */}
         {topSession && <TopSessionCard session={topSession} />}
@@ -105,9 +118,7 @@ export default function HomeScreen() {
 
         {sessions.length === 0 ? (
           <Text style={styles.empty}>
-            {isTracking
-              ? 'Keep moving — sessions appear here once detected.'
-              : 'No sessions recorded today. Tap Start to begin tracking.'}
+            Keep moving — sessions appear here once detected.
           </Text>
         ) : (
           sessions.map((session) => (
@@ -118,15 +129,14 @@ export default function HomeScreen() {
             />
           ))
         )}
-      </ScrollView>
 
-      {/* Start / Stop button */}
-      <TouchableOpacity
-        style={[styles.fab, isTracking && styles.fabActive]}
-        onPress={toggleTracking}
-        activeOpacity={0.85}>
-        <Text style={styles.fabText}>{isTracking ? 'Stop' : 'Start'}</Text>
-      </TouchableOpacity>
+        {/* Clear button */}
+        {sessions.length > 0 && (
+          <TouchableOpacity style={styles.clearButton} onPress={handleClear} activeOpacity={0.7}>
+            <Text style={styles.clearButtonText}>Clear All Sessions</Text>
+          </TouchableOpacity>
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -139,7 +149,7 @@ const styles = StyleSheet.create({
   scroll: {
     padding: 20,
     paddingTop: 60,
-    paddingBottom: 120,
+    paddingBottom: 40,
   },
   heading: {
     fontSize: 28,
@@ -172,28 +182,18 @@ const styles = StyleSheet.create({
     marginTop: 20,
     lineHeight: 22,
   },
-  fab: {
-    position: 'absolute',
-    bottom: 40,
+  clearButton: {
+    marginTop: 20,
     alignSelf: 'center',
-    backgroundColor: '#FF6B35',
-    borderRadius: 30,
-    paddingHorizontal: 48,
-    paddingVertical: 16,
-    shadowColor: '#FF6B35',
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FF453A',
   },
-  fabActive: {
-    backgroundColor: '#636366',
-    shadowColor: '#000',
-  },
-  fabText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+  clearButtonText: {
+    color: '#FF453A',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
