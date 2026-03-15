@@ -12,12 +12,14 @@ import {
 } from 'react-native';
 import ActivityGraph, { EpochDataPoint } from '../components/ActivityGraph';
 import CaloriesCard from '../components/CaloriesCard';
+import GoalProgressCard from '../components/GoalProgressCard';
 import SessionItem from '../components/SessionItem';
 import TopSessionCard from '../components/TopSessionCard';
 import { startMotionTracking, setOnEpochRecorded, getEpochHistory, clearEpochHistory, initEpochHistory } from '../services/motionService';
 import { setOnActiveCaloriesUpdated, setOnSessionSaved } from '../services/sessionManager';
-import { clearAllSessions, getTodaySessions } from '../storage/sessionStorage';
-import { ActivityType, Session } from '../types';
+import { clearAllSessions, getTodaySessions, getWeeklyActiveDays } from '../storage/sessionStorage';
+import { getGoals } from '../storage/settingsStorage';
+import { ActivityType, Session, UserGoals } from '../types';
 
 export default function HomeScreen() {
   // Keep screen awake while this screen is mounted
@@ -28,12 +30,20 @@ export default function HomeScreen() {
   const [liveActivity, setLiveActivity] = useState<ActivityType | null>(null);
   const [liveCalories, setLiveCalories] = useState(0);
   const [epochHistory, setEpochHistory] = useState<EpochDataPoint[]>([]);
+  const [goals, setGoals] = useState<UserGoals | null>(null);
+  const [weeklyActiveDays, setWeeklyActiveDays] = useState(0);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const trackingStarted = useRef(false);
 
   const loadSessions = useCallback(async () => {
-    const today = await getTodaySessions();
+    const [today, userGoals, activeDays] = await Promise.all([
+      getTodaySessions(),
+      getGoals(),
+      getWeeklyActiveDays(),
+    ]);
     setSessions(today);
+    setGoals(userGoals);
+    setWeeklyActiveDays(activeDays);
   }, []);
 
   // Reload sessions whenever the screen is focused
@@ -99,6 +109,16 @@ export default function HomeScreen() {
 
         {/* Calories summary */}
         <CaloriesCard totalCalories={totalCalories} isTracking={true} />
+
+        {/* Goal progress */}
+        {goals && (
+          <GoalProgressCard
+            goals={goals}
+            currentCalories={totalCalories}
+            currentActiveMinutes={sessions.reduce((sum, s) => sum + s.durationMinutes, 0)}
+            currentActiveDays={weeklyActiveDays}
+          />
+        )}
 
         {/* Live status */}
         {liveActivity !== null && (

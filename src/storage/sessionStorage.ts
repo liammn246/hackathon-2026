@@ -41,6 +41,27 @@ export async function getSessionById(id: string): Promise<Session | null> {
   return all.find((s) => s.id === id) ?? null;
 }
 
+/** Return the number of unique days with at least one session in the current week (Mon–Sun). */
+export async function getWeeklyActiveDays(): Promise<number> {
+  const all = await loadAll();
+  const now = new Date();
+  const day = now.getDay();
+  // Monday = start of week (getDay: 0=Sun, 1=Mon, ..., 6=Sat)
+  const mondayOffset = day === 0 ? 6 : day - 1;
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - mondayOffset);
+  weekStart.setHours(0, 0, 0, 0);
+
+  const activeDays = new Set<string>();
+  for (const s of all) {
+    if (s.startTime >= weekStart.getTime()) {
+      const d = new Date(s.startTime);
+      activeDays.add(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
+    }
+  }
+  return activeDays.size;
+}
+
 /** Clear all sessions (useful for testing). */
 export async function clearAllSessions(): Promise<void> {
   await AsyncStorage.removeItem(SESSIONS_KEY);
