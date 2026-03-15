@@ -23,68 +23,20 @@ const COLORS = {
   days: '#0A84FF',
 };
 
-/** Completed ring with a subtle pulsing glow. */
-function CompletedRing({
-  size,
-  strokeWidth,
-  color,
-  track,
-}: {
-  size: number;
-  strokeWidth: number;
-  color: string;
-  track: React.ReactNode;
-}) {
-  const opacity = useSharedValue(1);
-
-  useEffect(() => {
-    opacity.value = withRepeat(
-      withSequence(
-        withTiming(0.5, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
-        withTiming(1, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
-      ),
-      -1, // infinite
-    );
-  }, [opacity]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-  }));
-
-  const half = size / 2;
-
-  return (
-    <View style={{ width: size, height: size, position: 'absolute' }}>
-      {track}
-      <Animated.View
-        style={[
-          {
-            position: 'absolute',
-            width: size,
-            height: size,
-            borderRadius: half,
-            borderWidth: strokeWidth,
-            borderColor: color,
-          },
-          animatedStyle,
-        ]}
-      />
-    </View>
-  );
-}
-
 /**
- * Circular progress ring using the standard two-half-clip technique.
+ * Bulletproof circular arc using two half-circle clips.
  *
- * How it works:
- * - A full border-circle is placed inside a container clipped to half the width.
- * - Rotating the inner circle reveals the colored border progressively.
- * - For 0–180° we only use the right-half clip.
- * - For 180–360° the right half is fully filled, and a second clip on the left
- *   handles the remaining arc.
+ * All arcs start from the LEFT (9 o'clock) and sweep clockwise.
  *
- * At exactly 0%: only the dim track is shown.
- * Over 100%: capped at a full ring.
+ * Technique:
+ * 1. A full colored border-circle sits behind two opaque half-circle masks
+ *    (top mask and bottom mask) that hide it completely.
+ * 2. To reveal 0–180°, we rotate the BOTTOM mask clockwise, uncovering
+ *    the colored ring underneath from left → top → right.
+ * 3. To reveal 180–360°, the bottom mask is fully rotated (hidden),
+ *    and we rotate the TOP mask clockwise to uncover left → bottom → right.
+ *
+ * This produces a perfectly continuous arc with no seams.
  */
 function ArcRing({
   progress,
@@ -97,188 +49,126 @@ function ArcRing({
   strokeWidth: number;
   color: string;
 }) {
-  // Clamp between 0 and 1
   const clamped = Math.min(Math.max(progress, 0), 1);
   const half = size / 2;
+  const trackColor = `${color}18`;
 
-  // Common track
-  const track = (
-    <View
-      style={{
-        position: 'absolute',
-        width: size,
-        height: size,
-        borderRadius: half,
-        borderWidth: strokeWidth,
-        borderColor: `${color}18`,
-      }}
-    />
-  );
-
-  // Nothing to fill
   if (clamped <= 0) {
     return (
       <View style={{ width: size, height: size, position: 'absolute' }}>
-        {track}
+        <View style={{
+          position: 'absolute', width: size, height: size,
+          borderRadius: half, borderWidth: strokeWidth, borderColor: trackColor,
+        }} />
       </View>
     );
   }
 
-  // Full ring — rendered with pulse animation via wrapper
   if (clamped >= 1) {
     return (
-      <CompletedRing size={size} strokeWidth={strokeWidth} color={color} track={track} />
+      <CompletedRing size={size} strokeWidth={strokeWidth} color={color} trackColor={trackColor} />
     );
   }
 
   const degrees = clamped * 360;
-  const firstHalfDeg = Math.min(degrees, 180);
-  const showSecondHalf = degrees > 180;
-  const secondHalfDeg = showSecondHalf ? degrees - 180 : 0;
+  // How far each mask rotates (starting from its covering position)
+  const bottomMaskRotation = Math.min(degrees, 180);
+  const topMaskRotation = degrees > 180 ? degrees - 180 : 0;
 
   return (
     <View style={{ width: size, height: size, position: 'absolute' }}>
-      {track}
+      {/* Dim track */}
+      <View style={{
+        position: 'absolute', width: size, height: size,
+        borderRadius: half, borderWidth: strokeWidth, borderColor: trackColor,
+      }} />
 
-      {/* RIGHT half clip — sweeps 0° to 180° */}
-      <View
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: half,
-          width: half,
-          height: size,
-          overflow: 'hidden',
-        }}>
-        {/*
-          The inner circle starts with colored top border at 12 o'clock.
-          Rotating it clockwise pushes that colored edge into the visible
-          right-half window.
-        */}
-        <View
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: -half,
-            width: size,
-            height: size,
-            borderRadius: half,
-            borderWidth: strokeWidth,
-            borderColor: 'transparent',
-            borderTopColor: color,
-            transform: [{ rotate: `${firstHalfDeg}deg` }],
-          }}
-        />
+      {/* Full colored ring (sits behind the masks) */}
+      <View style={{
+        position: 'absolute', width: size, height: size,
+        borderRadius: half, borderWidth: strokeWidth, borderColor: color,
+      }} />
+
+      {/* TOP mask — covers top half of the colored ring.
+          Stays put for 0–180°, then rotates away for 180–360°. */}
+      <View style={{
+        position: 'absolute', top: 0, left: 0,
+        width: size, height: half, overflow: 'hidden',
+      }}>
+        <View style={{
+          position: 'absolute', top: 0, left: 0,
+          width: size, height: size,
+          borderRadius: half, backgroundColor: '#1C1C1E',
+          transform: [
+            { translateY: 0 },
+            { rotate: `${topMaskRotation}deg` },
+          ],
+        }} />
       </View>
 
-      {/* Once past 90°, the right quadrant is filled — paint it permanently */}
-      {degrees > 90 && (
-        <View
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: half,
-            width: half,
-            height: half,
-            overflow: 'hidden',
-          }}>
-          <View
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: -half,
-              width: size,
-              height: size,
-              borderRadius: half,
-              borderWidth: strokeWidth,
-              borderColor: 'transparent',
-              borderRightColor: color,
-            }}
-          />
+      {/* BOTTOM mask — covers bottom half of the colored ring.
+          Rotates away for 0–180°. Fully gone after 180°. */}
+      {degrees < 180 && (
+        <View style={{
+          position: 'absolute', top: half, left: 0,
+          width: size, height: half, overflow: 'hidden',
+        }}>
+          <View style={{
+            position: 'absolute', top: -half, left: 0,
+            width: size, height: size,
+            borderRadius: half, backgroundColor: '#1C1C1E',
+            transform: [{ rotate: `${bottomMaskRotation}deg` }],
+          }} />
         </View>
       )}
+    </View>
+  );
+}
 
-      {/* Once past 180°, the bottom-right quadrant is filled too */}
-      {showSecondHalf && (
-        <View
-          style={{
-            position: 'absolute',
-            top: half,
-            left: half,
-            width: half,
-            height: half,
-            overflow: 'hidden',
-          }}>
-          <View
-            style={{
-              position: 'absolute',
-              top: -half,
-              left: -half,
-              width: size,
-              height: size,
-              borderRadius: half,
-              borderWidth: strokeWidth,
-              borderColor: 'transparent',
-              borderBottomColor: color,
-            }}
-          />
-        </View>
-      )}
+/** Completed ring with a subtle pulsing glow. */
+function CompletedRing({
+  size,
+  strokeWidth,
+  color,
+  trackColor,
+}: {
+  size: number;
+  strokeWidth: number;
+  color: string;
+  trackColor: string;
+}) {
+  const opacity = useSharedValue(1);
+  const half = size / 2;
 
-      {/* LEFT half clip — sweeps 180° to 360° */}
-      {showSecondHalf && (
-        <View
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: half,
-            height: size,
-            overflow: 'hidden',
-          }}>
-          <View
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: size,
-              height: size,
-              borderRadius: half,
-              borderWidth: strokeWidth,
-              borderColor: 'transparent',
-              borderTopColor: color,
-              transform: [{ rotate: `${180 + secondHalfDeg}deg` }],
-            }}
-          />
-        </View>
-      )}
+  useEffect(() => {
+    opacity.value = withRepeat(
+      withSequence(
+        withTiming(0.5, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+    );
+  }, [opacity]);
 
-      {/* Once past 270°, the left quadrant is filled */}
-      {degrees > 270 && (
-        <View
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: half,
-            height: half,
-            overflow: 'hidden',
-          }}>
-          <View
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: size,
-              height: size,
-              borderRadius: half,
-              borderWidth: strokeWidth,
-              borderColor: 'transparent',
-              borderLeftColor: color,
-            }}
-          />
-        </View>
-      )}
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+  }));
+
+  return (
+    <View style={{ width: size, height: size, position: 'absolute' }}>
+      <View style={{
+        position: 'absolute', width: size, height: size,
+        borderRadius: half, borderWidth: strokeWidth, borderColor: trackColor,
+      }} />
+      <Animated.View
+        style={[
+          {
+            position: 'absolute', width: size, height: size,
+            borderRadius: half, borderWidth: strokeWidth, borderColor: color,
+          },
+          animatedStyle,
+        ]}
+      />
     </View>
   );
 }
@@ -337,14 +227,12 @@ export default function GoalProgressCard({
 
   return (
     <View style={styles.card}>
-      {/* Concentric rings */}
       <View style={styles.ringWrapper}>
         <View style={{ width: outerSize, height: outerSize, alignItems: 'center', justifyContent: 'center' }}>
           <ArcRing progress={calProgress} size={outerSize} strokeWidth={stroke} color={COLORS.calories} />
           <ArcRing progress={minProgress} size={midSize} strokeWidth={stroke} color={COLORS.minutes} />
           <ArcRing progress={dayProgress} size={innerSize} strokeWidth={stroke} color={COLORS.days} />
 
-          {/* Center label */}
           <View style={styles.centerLabel}>
             <Text style={[styles.centerPercent, allMet && styles.centerComplete]}>
               {Math.min(Math.round(((calProgress + minProgress + dayProgress) / 3) * 100), 100)}%
@@ -353,7 +241,6 @@ export default function GoalProgressCard({
         </View>
       </View>
 
-      {/* Legend */}
       <View style={styles.legend}>
         <LegendItem
           color={COLORS.calories}
