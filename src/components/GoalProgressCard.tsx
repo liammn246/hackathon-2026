@@ -1,5 +1,13 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { UserGoals } from '../types';
 
 interface GoalProgress {
@@ -15,9 +23,68 @@ const COLORS = {
   days: '#0A84FF',
 };
 
+/** Completed ring with a subtle pulsing glow. */
+function CompletedRing({
+  size,
+  strokeWidth,
+  color,
+  track,
+}: {
+  size: number;
+  strokeWidth: number;
+  color: string;
+  track: React.ReactNode;
+}) {
+  const opacity = useSharedValue(1);
+
+  useEffect(() => {
+    opacity.value = withRepeat(
+      withSequence(
+        withTiming(0.5, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1, // infinite
+    );
+  }, [opacity]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+  }));
+
+  const half = size / 2;
+
+  return (
+    <View style={{ width: size, height: size, position: 'absolute' }}>
+      {track}
+      <Animated.View
+        style={[
+          {
+            position: 'absolute',
+            width: size,
+            height: size,
+            borderRadius: half,
+            borderWidth: strokeWidth,
+            borderColor: color,
+          },
+          animatedStyle,
+        ]}
+      />
+    </View>
+  );
+}
+
 /**
- * Pure-View circular progress arc using two clipped rotating half-circles.
- * At 0% progress, nothing is colored. At 100%, the full ring is filled.
+ * Circular progress ring using the standard two-half-clip technique.
+ *
+ * How it works:
+ * - A full border-circle is placed inside a container clipped to half the width.
+ * - Rotating the inner circle reveals the colored border progressively.
+ * - For 0–180° we only use the right-half clip.
+ * - For 180–360° the right half is fully filled, and a second clip on the left
+ *   handles the remaining arc.
+ *
+ * At exactly 0%: only the dim track is shown.
+ * Over 100%: capped at a full ring.
  */
 function ArcRing({
   progress,
@@ -30,56 +97,50 @@ function ArcRing({
   strokeWidth: number;
   color: string;
 }) {
+  // Clamp between 0 and 1
   const clamped = Math.min(Math.max(progress, 0), 1);
-  const degrees = clamped * 360;
   const half = size / 2;
 
-  // At 0 progress, show only the track — no colored arc at all
-  if (degrees === 0) {
+  // Common track
+  const track = (
+    <View
+      style={{
+        position: 'absolute',
+        width: size,
+        height: size,
+        borderRadius: half,
+        borderWidth: strokeWidth,
+        borderColor: `${color}18`,
+      }}
+    />
+  );
+
+  // Nothing to fill
+  if (clamped <= 0) {
     return (
       <View style={{ width: size, height: size, position: 'absolute' }}>
-        <View
-          style={{
-            position: 'absolute',
-            width: size,
-            height: size,
-            borderRadius: half,
-            borderWidth: strokeWidth,
-            borderColor: `${color}18`,
-          }}
-        />
+        {track}
       </View>
     );
   }
 
+  // Full ring — rendered with pulse animation via wrapper
+  if (clamped >= 1) {
+    return (
+      <CompletedRing size={size} strokeWidth={strokeWidth} color={color} track={track} />
+    );
+  }
+
+  const degrees = clamped * 360;
+  const firstHalfDeg = Math.min(degrees, 180);
+  const showSecondHalf = degrees > 180;
+  const secondHalfDeg = showSecondHalf ? degrees - 180 : 0;
+
   return (
     <View style={{ width: size, height: size, position: 'absolute' }}>
-      {/* Track (dim background ring) */}
-      <View
-        style={{
-          position: 'absolute',
-          width: size,
-          height: size,
-          borderRadius: half,
-          borderWidth: strokeWidth,
-          borderColor: `${color}18`,
-        }}
-      />
+      {track}
 
-      {/*
-        The arc is drawn by placing a full colored border-circle inside
-        clipped half-width containers, then rotating it to reveal the
-        desired portion.
-
-        First 180°: rotate a circle inside the RIGHT half container.
-        The circle starts with its colored edge at 12-o'clock.
-        Rotating clockwise sweeps the colored arc from 12-o'clock rightward.
-
-        Next 180°: the right half is fully colored, and we add a second
-        rotating circle in the LEFT half container for the remaining arc.
-      */}
-
-      {/* Right-side clip: handles 0–180° */}
+      {/* RIGHT half clip — sweeps 0° to 180° */}
       <View
         style={{
           position: 'absolute',
@@ -89,6 +150,11 @@ function ArcRing({
           height: size,
           overflow: 'hidden',
         }}>
+        {/*
+          The inner circle starts with colored top border at 12 o'clock.
+          Rotating it clockwise pushes that colored edge into the visible
+          right-half window.
+        */}
         <View
           style={{
             position: 'absolute',
@@ -100,15 +166,67 @@ function ArcRing({
             borderWidth: strokeWidth,
             borderColor: 'transparent',
             borderTopColor: color,
-            borderRightColor: degrees >= 90 ? color : 'transparent',
-            borderBottomColor: degrees >= 180 ? color : 'transparent',
-            transform: [{ rotate: `${Math.min(degrees, 180)}deg` }],
+            transform: [{ rotate: `${firstHalfDeg}deg` }],
           }}
         />
       </View>
 
-      {/* Left-side clip: handles 180–360° */}
-      {degrees > 180 && (
+      {/* Once past 90°, the right quadrant is filled — paint it permanently */}
+      {degrees > 90 && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: half,
+            width: half,
+            height: half,
+            overflow: 'hidden',
+          }}>
+          <View
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: -half,
+              width: size,
+              height: size,
+              borderRadius: half,
+              borderWidth: strokeWidth,
+              borderColor: 'transparent',
+              borderRightColor: color,
+            }}
+          />
+        </View>
+      )}
+
+      {/* Once past 180°, the bottom-right quadrant is filled too */}
+      {showSecondHalf && (
+        <View
+          style={{
+            position: 'absolute',
+            top: half,
+            left: half,
+            width: half,
+            height: half,
+            overflow: 'hidden',
+          }}>
+          <View
+            style={{
+              position: 'absolute',
+              top: -half,
+              left: -half,
+              width: size,
+              height: size,
+              borderRadius: half,
+              borderWidth: strokeWidth,
+              borderColor: 'transparent',
+              borderBottomColor: color,
+            }}
+          />
+        </View>
+      )}
+
+      {/* LEFT half clip — sweeps 180° to 360° */}
+      {showSecondHalf && (
         <View
           style={{
             position: 'absolute',
@@ -129,9 +247,34 @@ function ArcRing({
               borderWidth: strokeWidth,
               borderColor: 'transparent',
               borderTopColor: color,
-              borderLeftColor: (degrees - 180) >= 90 ? color : 'transparent',
-              borderBottomColor: degrees >= 360 ? color : 'transparent',
-              transform: [{ rotate: `${degrees - 180}deg` }],
+              transform: [{ rotate: `${180 + secondHalfDeg}deg` }],
+            }}
+          />
+        </View>
+      )}
+
+      {/* Once past 270°, the left quadrant is filled */}
+      {degrees > 270 && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: half,
+            height: half,
+            overflow: 'hidden',
+          }}>
+          <View
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: size,
+              height: size,
+              borderRadius: half,
+              borderWidth: strokeWidth,
+              borderColor: 'transparent',
+              borderLeftColor: color,
             }}
           />
         </View>
@@ -146,14 +289,16 @@ function LegendItem({
   current,
   target,
   unit,
+  exceeded,
 }: {
   color: string;
   label: string;
   current: number;
   target: number;
   unit: string;
+  exceeded: boolean;
 }) {
-  const percent = target > 0 ? Math.min(Math.round((current / target) * 100), 999) : 0;
+  const percent = target > 0 ? Math.round((current / target) * 100) : 0;
 
   return (
     <View style={styles.legendItem}>
@@ -165,7 +310,9 @@ function LegendItem({
           <Text style={styles.legendTarget}> / {target} {unit}</Text>
         </Text>
       </View>
-      <Text style={[styles.legendPercent, { color }]}>{percent}%</Text>
+      <Text style={[styles.legendPercent, { color: exceeded ? '#30D158' : color }]}>
+        {percent}%
+      </Text>
     </View>
   );
 }
@@ -186,6 +333,8 @@ export default function GoalProgressCard({
   const midSize = outerSize - (stroke + gap) * 2;
   const innerSize = midSize - (stroke + gap) * 2;
 
+  const allMet = calProgress >= 1 && minProgress >= 1 && dayProgress >= 1;
+
   return (
     <View style={styles.card}>
       {/* Concentric rings */}
@@ -197,10 +346,7 @@ export default function GoalProgressCard({
 
           {/* Center label */}
           <View style={styles.centerLabel}>
-            <Text style={[
-              styles.centerPercent,
-              calProgress >= 1 && minProgress >= 1 && dayProgress >= 1 && styles.centerComplete,
-            ]}>
+            <Text style={[styles.centerPercent, allMet && styles.centerComplete]}>
               {Math.min(Math.round(((calProgress + minProgress + dayProgress) / 3) * 100), 100)}%
             </Text>
           </View>
@@ -215,6 +361,7 @@ export default function GoalProgressCard({
           current={currentCalories}
           target={goals.dailyCalories}
           unit="kcal"
+          exceeded={calProgress > 1}
         />
         <LegendItem
           color={COLORS.minutes}
@@ -222,6 +369,7 @@ export default function GoalProgressCard({
           current={currentActiveMinutes}
           target={goals.dailyActiveMinutes}
           unit="min"
+          exceeded={minProgress > 1}
         />
         <LegendItem
           color={COLORS.days}
@@ -229,6 +377,7 @@ export default function GoalProgressCard({
           current={currentActiveDays}
           target={goals.weeklyActiveDays}
           unit="/ wk"
+          exceeded={dayProgress > 1}
         />
       </View>
     </View>
