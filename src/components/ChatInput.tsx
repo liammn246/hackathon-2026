@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   TextInput,
   TouchableOpacity,
   StyleSheet,
   Platform,
+  Keyboard,
 } from 'react-native';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
@@ -15,6 +16,13 @@ interface Props {
 
 export default function ChatInput({ onSend, disabled = false }: Props) {
   const [text, setText] = useState('');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardWillShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardWillHide', () => setKeyboardVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
 
   function handleSend() {
     const trimmed = text.trim();
@@ -24,7 +32,7 @@ export default function ChatInput({ onSend, disabled = false }: Props) {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: keyboardVisible ? 10 : (Platform.OS === 'ios' ? 30 : 14) }]}>
       <View style={styles.inputRow}>
         <TextInput
           style={styles.input}
@@ -58,7 +66,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
     paddingHorizontal: 12,
     paddingTop: 10,
-    paddingBottom: Platform.OS === 'ios' ? 30 : 14,
   },
   inputRow: {
     flexDirection: 'row',
@@ -88,3 +95,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#2C2C2E',
   },
 });
+

@@ -137,9 +137,9 @@ export default function HomeScreen() {
         )}
 
         {/* Clear button */}
-        {sessions.length > 0 && (
+        {(sessions.length > 0 || epochHistory.length > 0) && (
           <TouchableOpacity style={styles.clearButton} onPress={handleClear} activeOpacity={0.7}>
-            <Text style={styles.clearButtonText}>Clear All Sessions</Text>
+            <Text style={styles.clearButtonText}>Clear All Data</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
