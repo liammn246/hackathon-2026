@@ -1,5 +1,7 @@
-import { ActivitySummary, ChatMessage } from '../types';
+import { ActivitySummary, ChatMessage, UserGoals } from '../types';
 import { getDailyActivitySummary } from './activitySummaryService';
+import { getGoals } from '../storage/settingsStorage';
+import { getWeeklyActiveDays } from '../storage/sessionStorage';
 
 const GEMINI_MODEL = 'gemini-2.5-flash';
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
@@ -8,16 +10,23 @@ const RATE_LIMIT_MS = 1500;
 
 let lastRequestTime = 0;
 
-function buildSystemPrompt(summary: ActivitySummary): string {
+function buildSystemPrompt(summary: ActivitySummary, goals: UserGoals, weeklyActiveDays: number): string {
   const now = new Date();
   const timeOfDay = now.getHours() < 12 ? 'morning' : now.getHours() < 17 ? 'afternoon' : 'evening';
 
   const activityLine =
     summary.sessionCount > 0
-      ? `Today so far: ${summary.sessionCount} workout session${summary.sessionCount > 1 ? 's' : ''}, ` +
-        `${summary.caloriesBurnedToday} kcal burned, ${summary.totalWorkoutMinutes} minutes of activity. ` +
+      ? `Today so far: ${summary.sessionCount} session${summary.sessionCount > 1 ? 's' : ''}, ` +
+        `${summary.caloriesBurnedToday} kcal burned, ${summary.totalWorkoutMinutes} min active. ` +
         `Activities: ${summary.activityTypes.join(', ')}.`
       : 'No workout sessions recorded today yet.';
+
+  const calProgress = goals.dailyCalories > 0
+    ? Math.round((summary.caloriesBurnedToday / goals.dailyCalories) * 100)
+    : 0;
+  const minProgress = goals.dailyActiveMinutes > 0
+    ? Math.round((summary.totalWorkoutMinutes / goals.dailyActiveMinutes) * 100)
+    : 0;
 
   return [
     'You are a fitness and nutrition coach in a mobile activity tracker.',
@@ -32,6 +41,9 @@ function buildSystemPrompt(summary: ActivitySummary): string {
     'User context:',
     `- ${timeOfDay}, weight: ${summary.weightKg} kg`,
     `- ${activityLine}`,
+    `- Daily calorie goal: ${summary.caloriesBurnedToday}/${goals.dailyCalories} kcal (${calProgress}%)`,
+    `- Daily active minutes goal: ${summary.totalWorkoutMinutes}/${goals.dailyActiveMinutes} min (${minProgress}%)`,
+    `- Weekly active days goal: ${weeklyActiveDays}/${goals.weeklyActiveDays} days`,
     '',
     'Use this context naturally. Don\'t repeat the data back unless asked.',
   ].join('\n');
@@ -74,8 +86,12 @@ export async function sendCoachMessage(
   }
 
   try {
-    const summary = await getDailyActivitySummary();
-    const systemPrompt = buildSystemPrompt(summary);
+    const [summary, goals, weeklyActiveDays] = await Promise.all([
+      getDailyActivitySummary(),
+      getGoals(),
+      getWeeklyActiveDays(),
+    ]);
+    const systemPrompt = buildSystemPrompt(summary, goals, weeklyActiveDays);
 
     const conversationHistory = formatHistoryForApi(history);
     conversationHistory.push({

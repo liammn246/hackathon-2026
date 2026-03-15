@@ -23,3 +23,9 @@ export interface ActivitySummary {
   sessionCount: number;
   weightKg: number;
 }
+
+export interface UserGoals {
+  dailyCalories: number;
+  dailyActiveMinutes: number;
+  weeklyActiveDays: number;
+}

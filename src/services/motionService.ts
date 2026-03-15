@@ -1,4 +1,5 @@
 import { Accelerometer } from 'expo-sensors';
+import { Platform } from 'react-native';
 import { ActivityType } from '../types';
 import { classifyActivity, computeMagnitude } from './activityClassifier';
 import { feedActivity } from './sessionManager';
@@ -96,6 +97,12 @@ export async function startMotionTracking(
 
   onActivityChange = onChange ?? null;
   epochSamples = [];
+
+  // Accelerometer is not available on web
+  if (Platform.OS === 'web') {
+    console.warn('[MotionService] Accelerometer not available on web — tracking disabled.');
+    return;
+  }
 
   Accelerometer.setUpdateInterval(SAMPLE_INTERVAL_MS);
 
