@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -24,159 +25,74 @@ const COLORS = {
 };
 
 /**
- * Arc ring starting from 9 o'clock (left), sweeping clockwise.
- *
- * Uses the standard two-clip approach:
- * - A colored half-circle border is placed inside a clipped container
- * - The container only shows one half of the parent, so rotating the
- *   inner border circle progressively reveals the colored arc.
- *
- * Phase 1 (0–180°): bottom-half clip, rotate colored left-border clockwise
- * Phase 2 (180–360°): bottom half is fully filled, top-half clip for the rest
+ * SVG-based arc ring. Uses strokeDasharray on an SVG <Circle> to draw
+ * a precise arc from 9 o'clock (left), sweeping clockwise.
+ * Works perfectly at any size and any percentage.
  */
 function ArcRing({
   progress,
   size,
   strokeWidth,
   color,
+  completed,
 }: {
   progress: number;
   size: number;
   strokeWidth: number;
   color: string;
+  completed: boolean;
 }) {
   const clamped = Math.min(Math.max(progress, 0), 1);
-  const half = size / 2;
-  const trackColor = `${color}18`;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const filled = circumference * clamped;
 
-  // 0% — just track
-  if (clamped <= 0) {
+  if (completed) {
     return (
-      <View style={{ width: size, height: size, position: 'absolute' }}>
-        <View style={{
-          width: size, height: size, borderRadius: half,
-          borderWidth: strokeWidth, borderColor: trackColor, position: 'absolute',
-        }} />
-      </View>
+      <CompletedRing size={size} strokeWidth={strokeWidth} color={color} />
     );
   }
 
-  // 100% — full ring with pulse
-  if (clamped >= 1) {
-    return <CompletedRing size={size} strokeWidth={strokeWidth} color={color} trackColor={trackColor} />;
-  }
-
-  const degrees = clamped * 360;
-
   return (
     <View style={{ width: size, height: size, position: 'absolute' }}>
-      {/* Track */}
-      <View style={{
-        width: size, height: size, borderRadius: half,
-        borderWidth: strokeWidth, borderColor: trackColor, position: 'absolute',
-      }} />
-
-      {/*
-        PHASE 1: bottom-half clip.
-        Inner circle has only borderLeftColor set (starts at 9 o'clock).
-        Rotating it clockwise sweeps color through the bottom half.
-      */}
-      <View style={{
-        position: 'absolute', top: half, left: 0,
-        width: size, height: half,
-        overflow: 'hidden',
-      }}>
-        <View style={{
-          position: 'absolute', top: -half, left: 0,
-          width: size, height: size, borderRadius: half,
-          borderWidth: strokeWidth,
-          borderColor: 'transparent',
-          borderLeftColor: color,
-          transform: [{ rotate: `${Math.min(degrees, 180)}deg` }],
-        }} />
-      </View>
-
-      {/* Once past 90°, the bottom-left quadrant is fully filled — lock it in */}
-      {degrees > 90 && (
-        <View style={{
-          position: 'absolute', top: half, left: 0,
-          width: half, height: half, overflow: 'hidden',
-        }}>
-          <View style={{
-            position: 'absolute', top: -half, left: 0,
-            width: size, height: size, borderRadius: half,
-            borderWidth: strokeWidth,
-            borderColor: 'transparent',
-            borderBottomColor: color,
-          }} />
-        </View>
-      )}
-
-      {/*
-        PHASE 2: top-half clip (only when > 180°).
-        The entire bottom half is now colored, so we fill a permanent bottom semicircle
-        and clip the rest through the top.
-      */}
-      {degrees > 180 && (
-        <>
-          {/* Permanent bottom-half fill */}
-          <View style={{
-            position: 'absolute', top: half, left: 0,
-            width: size, height: half, overflow: 'hidden',
-          }}>
-            <View style={{
-              position: 'absolute', top: -half, left: 0,
-              width: size, height: size, borderRadius: half,
-              borderWidth: strokeWidth,
-              borderColor: 'transparent',
-              borderLeftColor: color,
-              borderBottomColor: color,
-            }} />
-          </View>
-
-          {/* Top-half clip: sweep from 180° onward */}
-          <View style={{
-            position: 'absolute', top: 0, left: 0,
-            width: size, height: half, overflow: 'hidden',
-          }}>
-            <View style={{
-              position: 'absolute', top: 0, left: 0,
-              width: size, height: size, borderRadius: half,
-              borderWidth: strokeWidth,
-              borderColor: 'transparent',
-              borderLeftColor: color,
-              transform: [{ rotate: `${degrees}deg` }],
-            }} />
-          </View>
-
-          {/* Once past 270°, top-left quadrant is fully filled — lock it */}
-          {degrees > 270 && (
-            <View style={{
-              position: 'absolute', top: 0, left: 0,
-              width: half, height: half, overflow: 'hidden',
-            }}>
-              <View style={{
-                position: 'absolute', top: 0, left: 0,
-                width: size, height: size, borderRadius: half,
-                borderWidth: strokeWidth,
-                borderColor: 'transparent',
-                borderTopColor: color,
-              }} />
-            </View>
-          )}
-        </>
-      )}
+      <Svg width={size} height={size}>
+        {/* Track */}
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={`${color}20`}
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+        {/* Progress arc */}
+        {clamped > 0 && (
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={color}
+            strokeWidth={strokeWidth}
+            fill="none"
+            strokeDasharray={`${filled} ${circumference - filled}`}
+            strokeDashoffset={0}
+            strokeLinecap="round"
+            rotation={-90}
+            origin={`${size / 2}, ${size / 2}`}
+          />
+        )}
+      </Svg>
     </View>
   );
 }
 
 function CompletedRing({
-  size, strokeWidth, color, trackColor,
+  size, strokeWidth, color,
 }: {
-  size: number; strokeWidth: number; color: string; trackColor: string;
+  size: number; strokeWidth: number; color: string;
 }) {
   const opacity = useSharedValue(1);
-  const half = size / 2;
+  const radius = (size - strokeWidth) / 2;
 
   useEffect(() => {
     opacity.value = withRepeat(
@@ -192,14 +108,21 @@ function CompletedRing({
 
   return (
     <View style={{ width: size, height: size, position: 'absolute' }}>
-      <View style={{
-        position: 'absolute', width: size, height: size,
-        borderRadius: half, borderWidth: strokeWidth, borderColor: trackColor,
-      }} />
-      <Animated.View style={[{
-        position: 'absolute', width: size, height: size,
-        borderRadius: half, borderWidth: strokeWidth, borderColor: color,
-      }, animatedStyle]} />
+      <Svg width={size} height={size}>
+        <Circle
+          cx={size / 2} cy={size / 2} r={radius}
+          stroke={`${color}20`} strokeWidth={strokeWidth} fill="none"
+        />
+      </Svg>
+      <Animated.View style={[{ position: 'absolute', width: size, height: size }, animatedStyle]}>
+        <Svg width={size} height={size}>
+          <Circle
+            cx={size / 2} cy={size / 2} r={radius}
+            stroke={color} strokeWidth={strokeWidth} fill="none"
+            strokeLinecap="round"
+          />
+        </Svg>
+      </Animated.View>
     </View>
   );
 }
@@ -245,9 +168,12 @@ export default function GoalProgressCard({
     <View style={styles.card}>
       <View style={styles.ringWrapper}>
         <View style={{ width: outerSize, height: outerSize, alignItems: 'center', justifyContent: 'center' }}>
-          <ArcRing progress={calProgress} size={outerSize} strokeWidth={stroke} color={COLORS.calories} />
-          <ArcRing progress={minProgress} size={midSize} strokeWidth={stroke} color={COLORS.minutes} />
-          <ArcRing progress={dayProgress} size={innerSize} strokeWidth={stroke} color={COLORS.days} />
+          <ArcRing progress={calProgress} size={outerSize} strokeWidth={stroke}
+            color={COLORS.calories} completed={calProgress >= 1} />
+          <ArcRing progress={minProgress} size={midSize} strokeWidth={stroke}
+            color={COLORS.minutes} completed={minProgress >= 1} />
+          <ArcRing progress={dayProgress} size={innerSize} strokeWidth={stroke}
+            color={COLORS.days} completed={dayProgress >= 1} />
           <View style={styles.centerLabel}>
             <Text style={[styles.centerPercent, allMet && styles.centerComplete]}>
               {Math.min(Math.round(((calProgress + minProgress + dayProgress) / 3) * 100), 100)}%
